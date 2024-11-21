@@ -1,3 +1,4 @@
+import random
 from mesa import Agent, Model
 from mesa.time import RandomActivation
 from mesa.space import MultiGrid
@@ -8,62 +9,59 @@ class QueueAgent(Agent):
     """ An agent that represents a person in a queue. """
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
-        self.queue_id = unique_id % 10  # Assign agent to one of 10 queues
-        self.pos = None  # Initialize position as None (will be set later)
+        self.queue_id = unique_id % 10  # Assign agent to a queue
 
     def step(self):
-        """ Move agent one step to the left or dequeue if at column 0. """
-        if self.pos is None:
-            return  # If the agent has been removed from the grid, don't do anything
-
+        # Move agent one step to the left
         x, y = self.pos
-        if x > 0:  # Prevent the agent from moving out of the grid
-            new_pos = (x - 1, y)
-            self.model.grid.move_agent(self, new_pos)
-        elif x == 0:
-            # Dequeue logic: remove agent from grid when reaching column 0
-            self.model.grid.remove_agent(self)
-            self.pos = None  # Set position to None after removal
+        
+        if x > 0:
+            self.model.grid.move_agent(self, (x - 1, y))
 
 class StadiumModel(Model):
-    """ Model representing a stadium with queues. """
+    """A model representing the stadium queues."""
     def __init__(self, N):
         self.num_agents = N
-        self.grid = MultiGrid(10, 10, True)  # 10x10 grid for visualization
+        self.grid = MultiGrid(10, 10, True)
         self.schedule = RandomActivation(self)
 
-        # Create agents and place them in the grid
+        # Create agents and assign them to the grid
         for i in range(self.num_agents):
             agent = QueueAgent(i, self)
             self.schedule.add(agent)
-            # Spread agents across the grid (modular positioning for queues)
-            agent.pos = (i % 10, i // 10)  # Set initial position for the agent
-            self.grid.place_agent(agent, agent.pos)
+            self.grid.place_agent(agent, (i % 10, i // 10))
 
     def step(self):
-        """ Advance the model by one step, move agents, and rebalance queues. """
+        """Advance the model by one step."""
         self.schedule.step()
         self.rebalance_queues()
 
     def rebalance_queues(self):
-        """ Rebalance the queues if a queue exceeds the maximum size. """
-        for x in range(10):  # Loop through each queue (column)
-            # Collect all agents in this column
+        """Redistribute agents to maintain balance in queues."""
+        for x in range(10):
             agents_in_queue = [agent for agent in self.grid.get_cell_list_contents([(x, y) for y in range(10)])]
+            
+            if len(agents_in_queue) > 14:
+                excess_agents = agents_in_queue[14:]  # Get excess agents
+                half_excess = len(excess_agents) // 2
+                
+                # Move half of the excess agents to other queues
+                for agent in excess_agents[:half_excess]:
+                    target_queue = random.choice([i for i in range(10) if len(self.grid.get_cell_list_contents([(i, y) for y in range(10)])) < 10])
+                    self.grid.move_agent(agent, (target_queue, random.randint(0, 9)))
 
-            if len(agents_in_queue) > 25:
-                excess_agents = len(agents_in_queue) - 25
-                # Move excess agents to other queues with fewer than 10 agents
-                for i in range(self.num_agents):
-                    if len([agent for agent in self.grid.get_cell_list_contents([(i, y) for y in range(10)])]) < 10:
-                        for agent in agents_in_queue[:excess_agents]:
-                            # Move agent to a new queue
-                            new_pos = (i, (agent.pos[1] + 1) % 10)
-                            self.grid.move_agent(agent, new_pos)
-                        break  # Stop after moving the excess agents
+            # Optionally, add new agents randomly to any queue with space
+            for x in range(10):
+                agents_in_queue = [agent for agent in self.grid.get_cell_list_contents([(x, y) for y in range(10)])]
+                if len(agents_in_queue) < 10:
+                    num_new_agents = random.randint(0, 10 - len(agents_in_queue))
+                    for _ in range(num_new_agents):
+                        agent = QueueAgent(self.schedule.get_agent_count(), self)
+                        self.schedule.add(agent)
+                        self.grid.place_agent(agent, (x, random.randint(0, 9)))
 
 def agent_portrayal(agent):
-    """ Return the portrayal of the agent for visualization. """
+    """Function to portray the agent on the grid."""
     portrayal = {
         "Shape": "circle",
         "Filled": "true",
@@ -73,12 +71,11 @@ def agent_portrayal(agent):
     }
     return portrayal
 
-# Set up the visualization grid
+# Set up the visualization grid and server
 grid = CanvasGrid(agent_portrayal, 10, 10, 500, 500)
-# Set up the server and model
 server = ModularServer(StadiumModel,
                        [grid],
                        "Stadium Queue Model",
-                       {"N": 100})  # Number of agents
-server.port = 8521  # Port number for the simulation
+                       {"N": 100})
+server.port = 8521
 server.launch()
