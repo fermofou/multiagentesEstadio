@@ -43,7 +43,7 @@ def agent_portrayal(agent):
         "Shape": "circle",
         "Filled": "true",
         "r": 0.5,
-        "Color": "red",
+        "Color": "purple",
         "Layer": 0
     }
     return portrayal
